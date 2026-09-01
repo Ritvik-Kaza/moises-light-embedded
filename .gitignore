@@ -1,0 +1,10 @@
+.venv/
+__pycache__/
+*.pyc
+data/output/*
+!data/output/.gitkeep
+data/input/*.wav
+!data/input/.gitkeep
+models/*.pth
+models/*.ckpt
+results_*.json

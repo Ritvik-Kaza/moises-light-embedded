@@ -1,0 +1,23 @@
+# Development / laptop requirements.
+#
+# Install with:
+#   pip install -r requirements.txt
+#
+# On a laptop, plain `pip install torch` pulls the CUDA build (~2.5 GB). If you
+# have no NVIDIA GPU and want the smaller CPU wheel, install torch first with:
+#   pip install torch --index-url https://download.pytorch.org/whl/cpu
+# then run this file.
+
+# --- core ---
+torch>=2.0
+numpy>=1.24
+soundfile>=0.12          # audio read/write; bundles libsndfile on most platforms
+psutil>=5.9              # RSS and CPU sampling for the metrics report
+
+# --- Moises-Light architecture ---
+moises-light>=0.1.5      # architecture only; ships NO pretrained weights
+einops>=0.7
+rotary-embedding-torch>=0.5
+
+# --- pretrained reference backend (produces audible stems) ---
+openunmix>=1.2.1         # downloads weights on first use; needs internet once

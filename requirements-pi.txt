@@ -1,0 +1,22 @@
+# Raspberry Pi requirements (Raspberry Pi OS 64-bit / Ubuntu arm64).
+#
+# Install with:
+#   pip install -r requirements-pi.txt
+#
+# Notes specific to the Pi:
+#  * You MUST be on a 64-bit OS. There are no official PyTorch aarch64 wheels
+#    for 32-bit Raspberry Pi OS. Check with:  uname -m   (want: aarch64)
+#  * Install libsndfile from apt first, or soundfile will fail to load:
+#      sudo apt install -y libsndfile1 ffmpeg
+#  * openunmix is intentionally omitted. It is several times larger than
+#    Moises-Light and is only needed for the audible laptop demo. Add it
+#    manually if you want to compare the two on-device.
+
+torch>=2.0
+numpy>=1.24
+soundfile>=0.12
+psutil>=5.9
+
+moises-light>=0.1.5
+einops>=0.7
+rotary-embedding-torch>=0.5

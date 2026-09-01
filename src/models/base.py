@@ -1,0 +1,43 @@
+"""
+Backend interface.
+
+The separator only ever talks to this interface, which is what lets the same
+pipeline run the Moises-Light architecture (for embedded benchmarking) and a
+pretrained model (for audible output) without changing any pipeline code.
+"""
+
+from __future__ import annotations
+
+from abc import ABC, abstractmethod
+from typing import List
+
+import torch
+
+
+class SeparatorBackend(ABC):
+    """A model that maps a mixture chunk to four stem chunks."""
+
+    #: Human-readable name used in logs and the metrics report.
+    name: str = "base"
+
+    #: True when the loaded weights are trained. False means output audio is
+    #: meaningless and only timing/memory numbers should be trusted.
+    is_pretrained: bool = False
+
+    @property
+    @abstractmethod
+    def stems(self) -> List[str]:
+        """Stem names in the order the model's output dimension uses."""
+
+    @abstractmethod
+    def n_params(self) -> int:
+        """Total parameter count, used for the model-size report."""
+
+    @abstractmethod
+    def separate_chunk(self, mixture: torch.Tensor) -> torch.Tensor:
+        """
+        Args:
+            mixture: [1, 2, samples] float32
+        Returns:
+            [1, n_stems, 2, samples] float32
+        """
