@@ -4,7 +4,7 @@ Separates a music recording into four stems â€” **vocals, drums, bass, other** â
 and measures whether the model fits inside a Raspberry Pi's compute and memory
 budget.
 
-**Team:** Ritvik Kaza (24BCE5351), Vishal Narayan V (24BCE5427)
+**Team:** Ritvik Kaza , Vishal Narayan V
 
 ---
 
