@@ -13,6 +13,8 @@ Examples:
     python main.py separate data/input/song.wav
     python main.py separate song.wav --backend openunmix
     python main.py benchmark --profile pi4
+    python main.py separate song.wav --backend remote --query "bass guitar" \
+        --remote-url http://192.168.1.50:8765
 """
 
 from __future__ import annotations
@@ -37,6 +39,12 @@ def build_config(args: argparse.Namespace) -> RunConfig:
         cfg.preset = args.preset
     if args.checkpoint is not None:
         cfg.checkpoint = args.checkpoint
+    if getattr(args, "query", None) is not None:
+        cfg.query = args.query
+    if getattr(args, "remote_url", None) is not None:
+        cfg.remote_url = args.remote_url
+    if getattr(args, "remote_timeout", None) is not None:
+        cfg.remote_timeout = args.remote_timeout
     if args.chunk is not None:
         cfg.chunk_seconds = args.chunk
     if args.overlap is not None:
@@ -62,8 +70,12 @@ def add_common_args(p: argparse.ArgumentParser) -> None:
     p.add_argument(
         "--backend",
         default=None,
-        choices=["moises_light", "openunmix"],
-        help="moises_light = architecture under study; openunmix = pretrained reference",
+        choices=["moises_light", "openunmix", "remote"],
+        help=(
+            "moises_light = architecture under study; openunmix = pretrained "
+            "reference; remote = offload to a query-conditioned separator "
+            "running on another machine (see README.md's Offload setup section)"
+        ),
     )
     p.add_argument(
         "--preset",
@@ -74,6 +86,24 @@ def add_common_args(p: argparse.ArgumentParser) -> None:
         "--checkpoint",
         default=None,
         help="path to trained Moises-Light weights (.pth)",
+    )
+    p.add_argument(
+        "--query",
+        default=None,
+        help="text description of the target sound, required for --backend remote "
+        "(e.g. 'bass guitar')",
+    )
+    p.add_argument(
+        "--remote-url",
+        default=None,
+        help="offload server address, required for --backend remote "
+        "(e.g. http://192.168.1.50:8765)",
+    )
+    p.add_argument(
+        "--remote-timeout",
+        type=float,
+        default=None,
+        help="seconds to wait for one chunk's response from --backend remote (default 60)",
     )
     p.add_argument("--chunk", type=float, default=None, help="chunk length, seconds")
     p.add_argument("--overlap", type=float, default=None, help="crossfade, seconds")

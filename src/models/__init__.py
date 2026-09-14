@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from .base import SeparatorBackend
 
-AVAILABLE_BACKENDS = ("moises_light", "openunmix")
+AVAILABLE_BACKENDS = ("moises_light", "openunmix", "remote")
 
 
 def build_backend(cfg) -> SeparatorBackend:
@@ -27,6 +27,16 @@ def build_backend(cfg) -> SeparatorBackend:
         from .openunmix_backend import OpenUnmixBackend
 
         return OpenUnmixBackend(device=cfg.device)
+
+    if cfg.backend == "remote":
+        from .remote_backend import RemoteBackend
+
+        return RemoteBackend(
+            query=cfg.query,
+            url=cfg.remote_url,
+            device=cfg.device,
+            read_timeout=cfg.remote_timeout,
+        )
 
     raise ValueError(
         f"unknown backend '{cfg.backend}'. Available: {AVAILABLE_BACKENDS}"
