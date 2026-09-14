@@ -14,9 +14,12 @@ Run:
 
 from __future__ import annotations
 
+import http.server
 import os
+import socket
 import sys
 import tempfile
+import threading
 from typing import List
 
 import numpy as np
@@ -182,6 +185,27 @@ def test_config_validation() -> None:
     except ValueError:
         check("rejects unknown backend", True)
 
+    bad3 = RunConfig(backend="remote", remote_url="http://x:1")
+    try:
+        bad3.validate()
+        check("rejects remote backend with no query", False, "no exception raised")
+    except ValueError:
+        check("rejects remote backend with no query", True)
+
+    bad4 = RunConfig(backend="remote", query="bass")
+    try:
+        bad4.validate()
+        check("rejects remote backend with no remote_url", False, "no exception raised")
+    except ValueError:
+        check("rejects remote backend with no remote_url", True)
+
+    good = RunConfig(backend="remote", query="bass", remote_url="http://x:1")
+    try:
+        good.validate()
+        check("accepts remote backend with query + remote_url", True)
+    except ValueError as exc:
+        check("accepts remote backend with query + remote_url", False, str(exc))
+
 
 def test_moises_light_shapes() -> None:
     """The real model must accept a chunk and return [1, 4, 2, N]."""
@@ -204,6 +228,170 @@ def test_moises_light_shapes() -> None:
           f"{backend.n_params():,}")
 
 
+class _FakeSeparateHandler(http.server.BaseHTTPRequestHandler):
+    """
+    Stands in for scripts/serve_audiosep.py's /separate endpoint.
+
+    Applies a deterministic, verifiable "separation": average the input
+    channels to mono, halve the amplitude, duplicate back to stereo. Nothing
+    to do with real source separation — it exists to prove RemoteBackend's
+    wire protocol (request encoding, response decoding, shapes) round-trips
+    correctly without needing AudioSep, a GPU, or a network download.
+    """
+
+    def do_POST(self) -> None:  # noqa: N802 - required name by BaseHTTPRequestHandler
+        from urllib.parse import parse_qs, urlparse
+
+        qs = parse_qs(urlparse(self.path).query)
+        channels = int(qs.get("channels", ["2"])[0])
+        length = int(self.headers.get("Content-Length", 0))
+        body = self.rfile.read(length)
+        pcm = np.frombuffer(body, dtype=np.float32).reshape(channels, -1)
+
+        mono = pcm.mean(axis=0) * 0.5
+        out = np.stack([mono, mono], axis=0).astype(np.float32)
+
+        self.send_response(200)
+        self.send_header("Content-Type", "application/octet-stream")
+        self.end_headers()
+        self.wfile.write(out.tobytes())
+
+    def log_message(self, format: str, *args) -> None:  # noqa: A002 - silence test output
+        pass
+
+
+def _start_fake_server() -> tuple[http.server.HTTPServer, threading.Thread, int]:
+    server = http.server.HTTPServer(("127.0.0.1", 0), _FakeSeparateHandler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    return server, thread, server.server_port
+
+
+def test_remote_backend_wire_protocol() -> None:
+    try:
+        from src.models.remote_backend import RemoteBackend
+    except ImportError as exc:
+        check("remote backend importable", False, str(exc))
+        return
+
+    server, thread, port = _start_fake_server()
+    try:
+        backend = RemoteBackend(query="Bass Guitar!", url=f"http://127.0.0.1:{port}")
+        check(
+            "remote backend sanitizes query into a stem name",
+            backend.stems == ["bass_guitar"],
+            str(backend.stems),
+        )
+        check("remote backend flags itself query-driven", backend.is_query_driven, "")
+        check(
+            "remote backend reports 0 local params (no weights on this host)",
+            backend.n_params() == 0,
+            str(backend.n_params()),
+        )
+
+        n = 4410  # 0.1s at 44100 Hz
+        rng = np.random.default_rng(7)
+        x = torch.from_numpy((rng.standard_normal((1, 2, n)) * 0.1).astype(np.float32))
+        y = backend.separate_chunk(x)
+
+        check("remote backend output shape", tuple(y.shape) == (1, 1, 2, n), str(tuple(y.shape)))
+
+        expected = x[0].numpy().mean(axis=0) * 0.5
+        got = y[0, 0].numpy()
+        err = float(np.max(np.abs(got[0] - expected)))
+        check(
+            "remote backend round-trips the server's transform exactly",
+            err < 1e-5,
+            f"max abs error {err:.2e}",
+        )
+        check(
+            "remote backend tracks network round-trip time",
+            backend.last_network_seconds > 0,
+            f"{backend.last_network_seconds:.4f}s",
+        )
+    finally:
+        server.shutdown()
+        thread.join(timeout=2.0)
+
+
+def test_remote_backend_connection_error() -> None:
+    try:
+        from src.models.remote_backend import RemoteBackend
+    except ImportError as exc:
+        check("remote backend importable", False, str(exc))
+        return
+
+    # Bind then immediately close a socket to get a port nothing listens on.
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    sock.bind(("127.0.0.1", 0))
+    dead_port = sock.getsockname()[1]
+    sock.close()
+
+    backend = RemoteBackend(
+        query="drums", url=f"http://127.0.0.1:{dead_port}", connect_timeout=1.0
+    )
+    x = torch.zeros(1, 2, 100)
+    try:
+        backend.separate_chunk(x)
+        check("remote backend raises a clear error when server is unreachable", False, "no exception raised")
+    except RuntimeError as exc:
+        check(
+            "remote backend raises a clear error when server is unreachable",
+            "could not reach" in str(exc),
+            str(exc)[:70],
+        )
+
+
+def test_remote_backend_end_to_end() -> None:
+    """Runs a query-driven backend through the real chunking/overlap-add loop."""
+    try:
+        from src.models.remote_backend import RemoteBackend
+    except ImportError as exc:
+        check("remote backend importable", False, str(exc))
+        return
+
+    server, thread, port = _start_fake_server()
+    try:
+        with tempfile.TemporaryDirectory() as tmp:
+            src = os.path.join(tmp, "in.wav")
+            make_wav(src, 4.0)
+
+            cfg = RunConfig(
+                backend="remote",
+                query="bass guitar",
+                remote_url=f"http://127.0.0.1:{port}",
+                chunk_seconds=2.0,
+                overlap_seconds=0.25,
+                output_dir=tmp,
+                save_metrics_json=False,
+                threads=1,
+            )
+            cfg.validate()
+
+            sep = Separator.__new__(Separator)
+            sep.cfg = cfg
+            from src.metrics import RunMetrics
+
+            sep.metrics = RunMetrics()
+            sep.backend = RemoteBackend(query=cfg.query, url=cfg.remote_url)
+            sep.separate_file(src, output_dir=tmp, verbose=False)
+
+            written = sorted(f for f in os.listdir(tmp) if f.startswith("in_"))
+            check(
+                "remote backend writes exactly one query-named stem file",
+                written == ["in_bass_guitar.wav"],
+                str(written),
+            )
+            check(
+                "remote backend run records network time in metrics",
+                sep.metrics.network_seconds > 0,
+                f"{sep.metrics.network_seconds:.4f}s",
+            )
+    finally:
+        server.shutdown()
+        thread.join(timeout=2.0)
+
+
 def main() -> int:
     print("Running pipeline tests\n" + "-" * 55)
     test_config_validation()
@@ -212,6 +400,9 @@ def main() -> int:
     test_overlap_add_is_exact()
     test_stem_subset()
     test_moises_light_shapes()
+    test_remote_backend_wire_protocol()
+    test_remote_backend_connection_error()
+    test_remote_backend_end_to_end()
 
     failed = [r for r in results if r[1] == FAIL]
     print("-" * 55)
