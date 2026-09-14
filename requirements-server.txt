@@ -1,0 +1,15 @@
+# Offload server requirements — for scripts/serve_audiosep.py.
+#
+# IMPORTANT: install this into AudioSep's OWN conda environment, not this
+# project's .venv. AudioSep (https://github.com/Audio-AGI/AudioSep) is not
+# pip-installable on its own — it ships an environment.yml with pinned
+# torch/transformers/lightning versions, plus a multi-GB checkpoint. This
+# file only adds the one thing that environment is missing: a way to serve
+# HTTP requests.
+#
+#   conda activate AudioSep
+#   pip install -r requirements-server.txt
+#
+# See README.md's "Offload setup" section for the full setup from a clean laptop.
+
+flask>=2.3

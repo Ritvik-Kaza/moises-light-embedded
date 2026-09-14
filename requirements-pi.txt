@@ -20,3 +20,8 @@ psutil>=5.9
 moises-light>=0.1.5
 einops>=0.7
 rotary-embedding-torch>=0.5
+
+# --- remote/offload backend (--backend remote) ---
+requests>=2.28           # lightweight HTTP client; safe to install on the Pi.
+                          # The actual offloaded model (e.g. AudioSep) runs on
+                          # a laptop/server, never on the Pi. See README.md's "Offload setup".
