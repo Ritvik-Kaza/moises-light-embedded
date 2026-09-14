@@ -35,9 +35,14 @@ class RunConfig:
     """
 
     # --- model selection ---
-    backend: str = "moises_light"     # "moises_light" | "openunmix"
+    backend: str = "moises_light"     # "moises_light" | "openunmix" | "remote"
     preset: str = "paper_small"       # moises_light preset name
     checkpoint: str = ""              # path to .pth weights; empty = untrained
+
+    # --- query-driven / offloaded separation (backend="remote") ---
+    query: str = ""                   # text description of the target sound
+    remote_url: str = ""              # e.g. http://192.168.1.50:8765
+    remote_timeout: float = 60.0      # seconds to wait for one chunk's response
 
     # --- chunked inference ---
     chunk_seconds: float = 6.0        # audio seconds fed to the model at once
@@ -57,15 +62,24 @@ class RunConfig:
     save_metrics_json: bool = True
 
     def validate(self) -> None:
-        if self.backend not in ("moises_light", "openunmix"):
+        if self.backend not in ("moises_light", "openunmix", "remote"):
             raise ValueError(f"unknown backend: {self.backend}")
         if self.overlap_seconds >= self.chunk_seconds:
             raise ValueError("overlap_seconds must be smaller than chunk_seconds")
         if self.chunk_seconds <= 0:
             raise ValueError("chunk_seconds must be positive")
-        for s in self.stems:
-            if s not in STEM_NAMES:
-                raise ValueError(f"unknown stem '{s}', expected one of {STEM_NAMES}")
+
+        if self.backend == "remote":
+            # The remote backend's output stem is named after the query, not
+            # one of STEM_NAMES, so --stems filtering does not apply to it.
+            if not self.query.strip():
+                raise ValueError("backend='remote' requires --query, e.g. 'bass guitar'")
+            if not self.remote_url.strip():
+                raise ValueError("backend='remote' requires --remote-url, e.g. http://<laptop-ip>:8765")
+        else:
+            for s in self.stems:
+                if s not in STEM_NAMES:
+                    raise ValueError(f"unknown stem '{s}', expected one of {STEM_NAMES}")
 
     def as_dict(self) -> dict:
         return asdict(self)
