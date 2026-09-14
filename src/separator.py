@@ -137,7 +137,13 @@ class Separator:
         self.metrics.overlap_seconds = cfg.overlap_seconds
         self.metrics.n_chunks = n_chunks
 
-        stems = [s for s in self.backend.stems if s in cfg.stems]
+        if self.backend.is_query_driven:
+            # The backend's single stem is named after the query, not one of
+            # STEM_NAMES, so cfg.stems (a filter over the fixed vocabulary)
+            # does not apply — there is nothing to filter.
+            stems = list(self.backend.stems)
+        else:
+            stems = [s for s in self.backend.stems if s in cfg.stems]
         stem_index = {s: self.backend.stems.index(s) for s in stems}
 
         fade_in, fade_out = _make_ramps(overlap_n)
@@ -191,6 +197,9 @@ class Separator:
 
                 inference_time += dt
                 self.metrics.chunk_times.append(dt)
+                net = getattr(self.backend, "last_network_seconds", None)
+                if net is not None:
+                    self.metrics.network_seconds += net
 
                 out = y[0].detach().cpu().numpy().astype(np.float32, copy=False)
                 out = out[[stem_index[s] for s in stems]]
@@ -304,6 +313,9 @@ class Separator:
                 dt = time.perf_counter() - t_chunk
                 inference_time += dt
                 self.metrics.chunk_times.append(dt)
+                net = getattr(self.backend, "last_network_seconds", None)
+                if net is not None:
+                    self.metrics.network_seconds += net
                 if verbose:
                     print(
                         f"\r[bench] chunk {i+1}/{n_chunks}  {dt*1000:6.0f} ms",

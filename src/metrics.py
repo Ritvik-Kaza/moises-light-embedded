@@ -147,6 +147,7 @@ class RunMetrics:
 
     model_load_seconds: float = 0.0
     inference_seconds: float = 0.0      # model forward passes only
+    network_seconds: float = 0.0        # time spent waiting on a remote backend
     total_seconds: float = 0.0          # includes I/O and overlap-add
 
     chunk_times: List[float] = field(default_factory=list)
@@ -228,6 +229,13 @@ class RunMetrics:
             "-" * 62,
             f" Model load time   : {self.model_load_seconds:.2f} s",
             f" Inference time    : {self.inference_seconds:.2f} s",
+        ]
+        if self.network_seconds > 0:
+            lines.append(
+                f" Network time      : {self.network_seconds:.2f} s  "
+                f"(round-trip to the remote host, included in inference time)"
+            )
+        lines += [
             f" Total wall time   : {self.total_seconds:.2f} s",
             f" Mean chunk time   : {self.mean_chunk_ms:.0f} ms",
             f" Max  chunk time   : {self.max_chunk_ms:.0f} ms",
