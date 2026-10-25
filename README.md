@@ -1,4 +1,4 @@
-# Embedded AI-Based Music Source Separation using Moises-Light
+# Moises-Light: Embedded Audio Source Separation with Query-Driven Offloading
 
 Separates a music recording into four stems — **vocals, drums, bass, other** —
 and measures whether the model fits inside a Raspberry Pi's compute and memory
@@ -337,12 +337,11 @@ workload too heavy for it, over a network boundary. Keep it visually separate
 from the Moises-Light on-device numbers; they are two different claims.
 
 **Honesty note:** the client side (`src/models/remote_backend.py`) has
-automated tests and passes them. AudioSep itself was **not** run end to end
-while building this feature — no GPU/conda in that environment, and the
-checkpoint is a multi-gigabyte download. `scripts/serve_audiosep.py` is
-written directly against AudioSep's real, published API — but run it once
-yourself and confirm real output before relying on it for a demo, the same
-caution this project already applies to Open-Unmix.
+automated tests and passes them, and the full pipeline — Pi, network, and
+AudioSep itself — has been run end to end on real hardware: a Raspberry Pi 5
+against `scripts/serve_audiosep.py` running on a separate laptop, confirmed
+working for both `"vocals"` and `"bass guitar"` queries. See
+[Known limitations](#known-limitations) below for the measured numbers.
 
 ### Server (on your laptop)
 
@@ -412,13 +411,17 @@ smaller `--chunk`.
 - **The Open-Unmix backend is untested end to end in the authoring environment**
   because weight downloads were blocked there. The API usage is standard, but
   run it once on your laptop with internet before relying on it for a demo.
-- **The `remote` backend's client side (chunking, wire protocol, error
-  handling) has automated tests and passes them; the AudioSep model itself
-  does not** — it was never run end to end while building this, since that
-  needs a GPU-class machine, a conda environment, and a multi-gigabyte
-  checkpoint. Run `scripts/serve_audiosep.py` once yourself and confirm real
-  separated audio comes back before relying on it for a demo. See
-  [Offload setup](#offload-setup-query-driven-separation) above.
+- **The `remote` backend has been run end to end on real hardware**, not just
+  tested in isolation: a Raspberry Pi 5 driving `scripts/serve_audiosep.py`
+  on a separate laptop over the network, with AudioSep actually loaded and
+  separating real audio chunk-by-chunk. Confirmed working for both `"vocals"`
+  and `"bass guitar"` queries, with real-time factors around 0.19x–0.26x on
+  the Pi side (compute offloaded, Pi itself does only chunking/overlap-add/
+  I/O). Separation *quality* still varies by track and by stem — AudioSep is
+  a research model, and bass in particular is one of its harder stems — but
+  the pipeline itself, including the network round trip, is proven, not
+  theoretical. See [Offload setup](#offload-setup-query-driven-separation)
+  above.
 - **The fallback resampler is linear interpolation**, chosen to avoid a scipy
   dependency on the Pi. Feed it 44.1 kHz audio and this path never runs.
 - **Live microphone input is not implemented.** The current pipeline is
